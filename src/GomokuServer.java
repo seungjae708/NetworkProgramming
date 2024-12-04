@@ -45,13 +45,17 @@ public class GomokuServer {
 
     private static void playGame() throws IOException {
         try {
+            boolean forbiddenMoveOccurred = false;
             while (true) {
                 DataInputStream currentInput = isPlayer1Turn ? input1 : input2;
                 DataOutputStream currentOutput = isPlayer1Turn ? output1 : output2;
                 DataOutputStream otherOutput = isPlayer1Turn ? output2 : output1;
                 char currentSymbol = isPlayer1Turn ? 'X' : 'O';
 
-                currentOutput.writeUTF("Your turn.");
+                if (!forbiddenMoveOccurred) {
+                    currentOutput.writeUTF("Your turn.");
+                }
+
                 String move;
                 try {
                     move = currentInput.readUTF();
@@ -78,12 +82,15 @@ public class GomokuServer {
 
                 board[row][col] = currentSymbol;
 
-                // Check forbidden moves
+                // 삼삼/사사/장목 금지 규칙 검사
                 if (isForbiddenMove(row, col, currentSymbol)) {
                     currentOutput.writeUTF("Forbidden move! Try again.");
                     board[row][col] = '.'; // Undo the move
+                    forbiddenMoveOccurred = true; // 금지된 수 발생 플래그 설정
                     continue;
                 }
+
+                forbiddenMoveOccurred = false; // 금지된 수가 없으면 플래그 초기화
 
                 broadcastBoard();
 
@@ -118,51 +125,87 @@ public class GomokuServer {
     }
 
     private static boolean isForbiddenMove(int row, int col, char symbol) {
-//        if (symbol == 'O') return false; // 백돌은 금지 규칙 적용 제외
+//        if (symbol == 'O') return false; // 백돌은 금지 규칙 없음
 
-        int threeCount = countPatterns(row, col, symbol, 3);
-        int fourCount = countPatterns(row, col, symbol, 4);
+        // 삼삼 금지: 열린 삼이 2개 이상 발생
+        int threeCount = countOpenThree(row, col, symbol);
+        if (threeCount >= 2) return true;
 
-        if (threeCount >= 2 || fourCount >= 2) return true; // 33 또는 44
-        if (symbol == 'X' && threeCount >= 1 && fourCount >= 1) return true; // 34 (흑돌만)
+        // 사사 금지: 열린 사가 2개 이상 발생
+        int fourCount = countOpenFour(row, col, symbol);
+        if (fourCount >= 2) return true;
 
-        return false;
+        // 장목 금지: 6개 이상의 돌이 연속된 경우
+        if (isOverline(row, col, symbol)) return true;
+
+        return false; // 금지되지 않은 수
     }
 
-    private static int countPatterns(int row, int col, char symbol, int length) {
-        int count = 0;
+    private static boolean isOverline(int row, int col, char symbol) {
+        // 장목(6개 이상 연속) 여부 검사
         int[][] directions = {{1, 0}, {0, 1}, {1, 1}, {1, -1}};
-
         for (int[] dir : directions) {
-            int total = 1;
-            boolean openStart = false, openEnd = false;
-
-            // 양쪽 방향 검사
+            int count = 1;
             for (int d = -1; d <= 1; d += 2) {
                 int r = row, c = col;
                 while (true) {
                     r += dir[0] * d;
                     c += dir[1] * d;
-                    if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) break;
-                    if (board[r][c] == symbol) {
-                        total++;
-                    } else if (board[r][c] == '.') {
-                        if (d == -1) openStart = true;
-                        else openEnd = true;
-                        break;
+                    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] == symbol) {
+                        count++;
                     } else {
                         break;
                     }
                 }
             }
+            if (count > 5) return true;
+        }
+        return false;
+    }
 
-            // 열린 패턴인지 확인
-            if (total == length && openStart && openEnd) {
+    private static int countOpenThree(int row, int col, char symbol) {
+        return countPatterns(row, col, symbol, 3, true);
+    }
+
+    private static int countOpenFour(int row, int col, char symbol) {
+        return countPatterns(row, col, symbol, 4, true);
+    }
+
+    private static int countPatterns(int row, int col, char symbol, int length, boolean checkOpen) {
+        int count = 0;
+        int[][] directions = {{1, 0}, {0, 1}, {1, 1}, {1, -1}};
+
+        for (int[] dir : directions) {
+            int consecutive = 1; // 현재 연속된 돌 개수
+            boolean openStart = false, openEnd = false;
+
+            // ← 방향
+            int nx = row - dir[0], ny = col - dir[1];
+            while (isValid(nx, ny) && board[nx][ny] == symbol) {
+                consecutive++;
+                nx -= dir[0];
+                ny -= dir[1];
+            }
+            if (isValid(nx, ny) && board[nx][ny] == '.') openStart = true;
+
+            // → 방향
+            nx = row + dir[0];
+            ny = col + dir[1];
+            while (isValid(nx, ny) && board[nx][ny] == symbol) {
+                consecutive++;
+                nx += dir[0];
+                ny += dir[1];
+            }
+            if (isValid(nx, ny) && board[nx][ny] == '.') openEnd = true;
+
+            // 패턴이 유효한지 검사
+            if (consecutive == length && (openStart && openEnd)) {
                 count++;
             }
         }
         return count;
     }
+
 
     private static boolean checkWin(int row, int col, char symbol) {
         int[][] directions = {{1, 0}, {0, 1}, {1, 1}, {1, -1}};
@@ -192,6 +235,10 @@ public class GomokuServer {
             }
         }
         return true;
+    }
+
+    private static boolean isValid(int x, int y) {
+        return x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE;
     }
 
     private static void resetPlayers() {
