@@ -18,7 +18,7 @@ public class GomokuClient {
     private GamePanel gamePanel;
     private JFrame frame;
     private boolean isPlayerTurn = false;
-    private JTextArea chatArea;
+    private JPanel messageArea = new JPanel(); // 기본 초기화
     private JTextField messageField;
     private JLabel timerLabel;
     private Timer timer;
@@ -66,7 +66,7 @@ public class GomokuClient {
             background.add(infoPanel);
 
             JPanel chatPanel = createChatPanel();
-            chatPanel.setBounds(650, 300, 300, 350);
+            chatPanel.setBounds(650, 300, 300, 300);
             background.add(chatPanel);
 
             frame.add(mainPanel);
@@ -167,11 +167,14 @@ public class GomokuClient {
 
                 // 채팅 메시지는 항상 즉시 표시
                 if (message.startsWith("CHAT:")) {
-                    // 자신이 보낸 메시지는 다시 출력하지 않음
-                    String player = message.split(":")[1].trim(); // 메시지에서 Player 정보를 추출
-                    if (!playerRole.equals(player)) {
+                    String[] parts = message.split(":", 3); // "CHAT:", "Player", "Message"
+                    if (parts.length == 3) {
+                        String sender = parts[1].trim();
+                        String content = parts[2].trim();
+
                         SwingUtilities.invokeLater(() -> {
-                            chatArea.append(message.substring(5) + "\n");
+                            boolean isOwnMessage = sender.equals(playerRole);
+                            addMessage(messageArea, sender + ": " + content, isOwnMessage);
                         });
                     }
                     continue;
@@ -284,16 +287,14 @@ public class GomokuClient {
         chatPanel.setBorder(BorderFactory.createLineBorder(new Color(255, 182, 193), 3));
         chatPanel.setBackground(new Color(255, 248, 220));
 
-        chatArea = new JTextArea();
-        chatArea.setEditable(false);
-        chatArea.setLineWrap(true);
-        chatArea.setWrapStyleWord(true);
-        chatArea.setBackground(new Color(255, 240, 245));
-        chatArea.setFont(new Font("맑은 고딕", Font.PLAIN, 14));
-        chatArea.setBorder(BorderFactory.createLineBorder(new Color(255, 105, 180), 2));
-        JScrollPane chatScrollPane = new JScrollPane(chatArea);
-        chatScrollPane.setBounds(10, 10, 280, 200);
-        chatPanel.add(chatScrollPane);
+        // 클래스 멤버 변수인 messageArea를 초기화
+        messageArea.setLayout(new BoxLayout(messageArea, BoxLayout.Y_AXIS));
+        messageArea.setBackground(new Color(255, 240, 245));
+
+        JScrollPane messageScrollPane = new JScrollPane(messageArea);
+        messageScrollPane.setBounds(10, 10, 280, 200);
+        messageScrollPane.setBorder(BorderFactory.createLineBorder(new Color(255, 105, 180), 2));
+        chatPanel.add(messageScrollPane);
 
         messageField = new JTextField();
         messageField.setBounds(10, 220, 200, 30);
@@ -335,23 +336,42 @@ public class GomokuClient {
         return chatPanel;
     }
 
+
     private void sendMessage() {
         String message = messageField.getText();
         if (!message.isEmpty()) {
             try {
-                // 메시지를 서버로 전송
+                // 서버에 메시지 전송
                 output.writeUTF("CHAT:" + playerRole + ": " + message);
 
-                // 메시지를 자신의 채팅창에 추가
-                chatArea.append(playerRole + ": " + message + "\n");
-
-                // 메시지 입력창 초기화
+                // 메시지 입력 필드 초기화
                 messageField.setText("");
-            } catch (Exception ex) {
-                ex.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
     }
+
+
+
+    private void addMessage(JPanel messageArea, String message, boolean isOwnMessage) {
+        JPanel messagePanel = new JPanel();
+        messagePanel.setLayout(new FlowLayout(isOwnMessage ? FlowLayout.RIGHT : FlowLayout.LEFT));
+        messagePanel.setOpaque(false);
+
+        JLabel messageLabel = new JLabel(message); // 메시지를 한 번만 설정
+        messageLabel.setFont(new Font("맑은 고딕", Font.PLAIN, 14));
+        messageLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+        messageLabel.setOpaque(true);
+        messageLabel.setBackground(isOwnMessage ? new Color(173, 216, 230) : new Color(255, 228, 225));
+        messageLabel.setForeground(Color.BLACK);
+
+        messagePanel.add(messageLabel);
+        messageArea.add(messagePanel);
+        messageArea.revalidate();
+        messageArea.repaint();
+    }
+
 
     // 게임판을 그리는 커스터마이즈된 패널 클래스
     private class GamePanel extends JPanel {
