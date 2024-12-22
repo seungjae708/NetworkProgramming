@@ -63,16 +63,6 @@ public class GameFrame extends JFrame {
         rightGif.setBounds(550, 30, 200, 200); // GIF의 위치와 크기 설정
         background.add(rightGif);
 
-//        // 왼쪽 GIF 추가
-//        JLabel leftGif = new JLabel(new ImageIcon(getClass().getResource("/images/animated_bunny.gif")));
-//        leftGif.setBounds(-50, 100, 400, 400); // GIF의 위치와 크기 설정
-//        background.add(leftGif);
-//
-//        // 오른쪽 GIF 추가
-//        JLabel rightGif = new JLabel(new ImageIcon(getClass().getResource("/images/animated_bear.gif")));
-//        rightGif.setBounds(450, 100, 400, 400); // GIF의 위치와 크기 설정
-//        background.add(rightGif);
-
         // 이벤트 핸들러
         startGameButton.addActionListener(e -> {
             new GomokuClient("localhost", 5000);
