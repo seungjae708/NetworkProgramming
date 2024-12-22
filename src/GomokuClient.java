@@ -1,4 +1,5 @@
 import javax.swing.*;
+import javax.swing.plaf.basic.BasicScrollBarUI;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -21,6 +22,7 @@ public class GomokuClient {
     private JPanel messageArea = new JPanel(); // 기본 초기화
     private JTextField messageField;
     private JLabel timerLabel;
+    private JLabel timerLabel1;
     private Timer timer;
     private int timeLeft = 20;
     private boolean undoRequested = false;
@@ -62,11 +64,11 @@ public class GomokuClient {
             background.add(gamePanel);
 
             JPanel infoPanel = createInfoPanel();
-            infoPanel.setBounds(650, 50, 300, 200);
+            infoPanel.setBounds(620, 50, 310, 300);
             background.add(infoPanel);
 
             JPanel chatPanel = createChatPanel();
-            chatPanel.setBounds(650, 300, 300, 300);
+            chatPanel.setBounds(650, 300, 300, 320);
             background.add(chatPanel);
 
             frame.add(mainPanel);
@@ -260,7 +262,7 @@ public class GomokuClient {
         infoPanel.setOpaque(false);
 
         JPanel timerPanel = new JPanel();
-        timerPanel.setBounds(50, 20, 200, 60);
+        timerPanel.setBounds(90, 20, 200, 60);
         timerPanel.setLayout(null);
         timerPanel.setBackground(new Color(255, 248, 220));
         timerPanel.setBorder(BorderFactory.createLineBorder(new Color(255, 182, 193), 3));
@@ -268,19 +270,51 @@ public class GomokuClient {
         timerLabel = new JLabel("20", SwingConstants.CENTER);
         timerLabel.setFont(new Font("맑은 고딕", Font.BOLD, 30));
         timerLabel.setForeground(new Color(255, 105, 180));
-        timerLabel.setBounds(10, 10, 180, 40);
+        timerLabel.setBounds(-10, 10, 180, 40);
         timerPanel.add(timerLabel);
         infoPanel.add(timerPanel);
 
-        JLabel roleLabel = new JLabel("Role: " + playerRole, SwingConstants.CENTER);
+        timerLabel1 = new JLabel("초", SwingConstants.CENTER);
+        timerLabel1.setFont(new Font("맑은 고딕", Font.BOLD, 30));
+        timerLabel1.setForeground(new Color(255, 105, 180));
+        timerLabel1.setBounds(30, 10, 180, 40);
+        timerPanel.add(timerLabel1);
+        infoPanel.add(timerPanel);
+
+        JLabel roleLabel = new JLabel("You are " + playerRole, SwingConstants.CENTER);
         roleLabel.setFont(new Font("맑은 고딕", Font.BOLD, 20));
         roleLabel.setForeground(new Color(255, 105, 180));
-        roleLabel.setBounds(20, 100, 260, 40);
+        roleLabel.setBounds(120, 190, 260, 40);
         infoPanel.add(roleLabel);
 
+        // playerRole에 따라 적절한 GIF를 추가
+        if (playerRole.equals("Player 1 (X).")) {
+            JLabel leftGif = new JLabel(new ImageIcon(getClass().getResource("/images/bunny.gif")));
+            leftGif.setBounds(-10, 70, 200, 200); // GIF의 위치와 크기 설정
+            infoPanel.add(leftGif);
+
+            // black.png를 리사이즈하여 추가
+            ImageIcon blackIcon = new ImageIcon(getClass().getResource("/images/black.png"));
+            Image resizedBlack = blackIcon.getImage().getScaledInstance(50, 50, Image.SCALE_SMOOTH);
+            JLabel imageLabel = new JLabel(new ImageIcon(resizedBlack));
+            imageLabel.setBounds(200, 140, 50, 50); // 이미지의 위치와 크기 설정
+            infoPanel.add(imageLabel);
+        } else if (playerRole.equals("Player 2 (O).")) {
+            JLabel rightGif = new JLabel(new ImageIcon(getClass().getResource("/images/bear.gif")));
+            rightGif.setBounds(-10, 70, 200, 200); // GIF의 위치와 크기 설정
+            infoPanel.add(rightGif);
+
+            // white.png를 리사이즈하여 추가
+            ImageIcon whiteIcon = new ImageIcon(getClass().getResource("/images/white.png"));
+            Image resizedWhite = whiteIcon.getImage().getScaledInstance(50, 50, Image.SCALE_SMOOTH);
+            JLabel imageLabel = new JLabel(new ImageIcon(resizedWhite));
+            imageLabel.setBounds(200, 140, 50, 50); // 이미지의 위치와 크기 설정
+            infoPanel.add(imageLabel);
+        }
 
         return infoPanel;
     }
+
 
     private JPanel createChatPanel() {
         JPanel chatPanel = new JPanel(null);
@@ -300,18 +334,26 @@ public class GomokuClient {
         messageField.setBounds(10, 220, 200, 30);
         messageField.setFont(new Font("맑은 고딕", Font.PLAIN, 14));
         messageField.setBorder(BorderFactory.createLineBorder(new Color(255, 105, 180), 2));
+
+        // Enter 키로 메시지를 전송
+        messageField.addActionListener(e -> sendMessage());
+
+        // CustomScrollBarUI 적용
+        messageScrollPane.getVerticalScrollBar().setUI(new GamePanel.CustomScrollBarUI());
+        messageScrollPane.getHorizontalScrollBar().setUI(new GamePanel.CustomScrollBarUI());
+        messageScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(12, 0)); // 스크롤바 두께 설정
+
         chatPanel.add(messageField);
 
-        JButton sendButton = new JButton("전송");
+        GamePanel.RoundedButton sendButton = new GamePanel.RoundedButton("전송", 15);
         sendButton.setBounds(220, 220, 70, 30);
         sendButton.setBackground(new Color(255, 240, 245));
         sendButton.setForeground(new Color(255, 105, 180));
         sendButton.setFont(new Font("맑은 고딕", Font.BOLD, 14));
-        sendButton.setBorder(BorderFactory.createLineBorder(new Color(255, 105, 180), 2));
         sendButton.addActionListener(e -> sendMessage());
         chatPanel.add(sendButton);
 
-        JButton undoButton = new JButton("무르기 요청");
+        GamePanel.RoundedButton undoButton = new GamePanel.RoundedButton("무르기 요청", 15);
         undoButton.setBounds(10, 260, 280, 30);
         undoButton.setBackground(new Color(255, 192, 203));
         undoButton.setFont(new Font("맑은 고딕", Font.BOLD, 14));
@@ -359,15 +401,27 @@ public class GomokuClient {
         messagePanel.setLayout(new FlowLayout(isOwnMessage ? FlowLayout.RIGHT : FlowLayout.LEFT));
         messagePanel.setOpaque(false);
 
-        JLabel messageLabel = new JLabel(message); // 메시지를 한 번만 설정
+        // JTextArea로 변경하여 자동 줄바꿈 적용
+        JTextArea messageLabel = new JTextArea(message);
         messageLabel.setFont(new Font("맑은 고딕", Font.PLAIN, 14));
-        messageLabel.setBorder(BorderFactory.createEmptyBorder(5, 10, 5, 10));
+        messageLabel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5)); // 메시지 내부 여백
         messageLabel.setOpaque(true);
-        messageLabel.setBackground(isOwnMessage ? new Color(173, 216, 230) : new Color(255, 228, 225));
+        messageLabel.setBackground(isOwnMessage ? new Color(255, 192, 203) : new Color(255, 248, 220));
         messageLabel.setForeground(Color.BLACK);
 
+        // JTextArea 설정
+        messageLabel.setEditable(false); // 편집 불가능
+        messageLabel.setLineWrap(true); // 줄바꿈 활성화
+        messageLabel.setWrapStyleWord(true); // 단어 단위로 줄바꿈
+
+        // 패널에 추가
         messagePanel.add(messageLabel);
+
+        // 메시지 간의 간격을 추가
+        messageArea.add(Box.createVerticalStrut(5)); // 메시지 사이에 5픽셀 간격 추가
         messageArea.add(messagePanel);
+
+        // 메시지 영역 갱신
         messageArea.revalidate();
         messageArea.repaint();
     }
@@ -433,6 +487,107 @@ public class GomokuClient {
                 }
             });
         }
+
+        static class RoundedButton extends JButton {
+            private final int radius;
+
+            public RoundedButton(String text, int radius) {
+                super(text);
+                this.radius = radius;
+                setFocusPainted(false);
+                setContentAreaFilled(false);
+                setOpaque(false);
+            }
+
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                // 배경 색상 설정
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), radius, radius);
+
+                super.paintComponent(g);
+                g2.dispose();
+            }
+
+            @Override
+            protected void paintBorder(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                // 테두리 색상 설정
+                g2.setColor(getForeground());
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, radius, radius);
+
+                g2.dispose();
+            }
+        }
+
+
+        public static class CustomScrollBarUI extends BasicScrollBarUI {
+            @Override
+            protected void configureScrollBarColors() {
+                thumbColor = new Color(255, 182, 193); // 스크롤 핸들 색상
+                trackColor = new Color(255, 240, 245); // 트랙 색상
+            }
+
+            @Override
+            protected void paintThumb(Graphics g, JComponent c, Rectangle thumbBounds) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(thumbColor);
+                g2.fillRoundRect(thumbBounds.x, thumbBounds.y, thumbBounds.width, thumbBounds.height, 10, 10); // 둥근 모서리
+                g2.dispose();
+            }
+
+            @Override
+            protected void paintTrack(Graphics g, JComponent c, Rectangle trackBounds) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setColor(trackColor);
+                g2.fillRect(trackBounds.x, trackBounds.y, trackBounds.width, trackBounds.height);
+                g2.dispose();
+            }
+
+            @Override
+            protected JButton createDecreaseButton(int orientation) {
+                return createArrowButton();
+            }
+
+            @Override
+            protected JButton createIncreaseButton(int orientation) {
+                return createArrowButton();
+            }
+
+            private JButton createArrowButton() {
+                JButton button = new JButton() {
+                    @Override
+                    protected void paintComponent(Graphics g) {
+                        super.paintComponent(g);
+                        Graphics2D g2 = (Graphics2D) g.create();
+                        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                        // 배경색
+                        g2.setColor(new Color(255, 192, 203));
+                        g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
+
+                        // 화살표 그리기
+                        g2.setColor(new Color(255, 105, 180));
+                        int[] xPoints = {getWidth() / 4, getWidth() / 2, getWidth() * 3 / 4};
+                        int[] yPoints = {getHeight() / 2 + 2, getHeight() / 4, getHeight() / 2 + 2};
+                        g2.fillPolygon(xPoints, yPoints, 3);
+
+                        g2.dispose();
+                    }
+                };
+                button.setPreferredSize(new Dimension(12, 12));
+                button.setBorder(BorderFactory.createEmptyBorder());
+                button.setContentAreaFilled(false);
+                return button;
+            }
+        }
+
 
         @Override
         protected void paintComponent(Graphics g) {
