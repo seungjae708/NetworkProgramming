@@ -23,9 +23,14 @@ public class GomokuClient {
     private JTextField messageField;
     private JLabel timerLabel;
     private JLabel timerLabel1;
+    private GamePanel.RoundedButton leftArrow ;
+    private GamePanel.RoundedButton rightArrow;
     private Timer timer;
     private int timeLeft = 20;
     private boolean undoRequested = false;
+    private final List<TurnRecord> gameHistory = new ArrayList<>();
+    private int currentReplayStep = -1; // 현재 재생 중인 단계
+    private boolean isGameEnded = false;
 
     public GomokuClient(String serverAddress, int port) {
         try {
@@ -60,7 +65,7 @@ public class GomokuClient {
             background.setBounds(0, 0, 1000, 700);
             mainPanel.add(background);
 
-            gamePanel.setBounds(50, 50, 570, 570);
+            gamePanel.setBounds(50, 50, 580, 580);
             background.add(gamePanel);
 
             JPanel infoPanel = createInfoPanel();
@@ -68,8 +73,29 @@ public class GomokuClient {
             background.add(infoPanel);
 
             JPanel chatPanel = createChatPanel();
-            chatPanel.setBounds(650, 300, 300, 320);
+            chatPanel.setBounds(650, 290, 300, 340);
             background.add(chatPanel);
+
+            leftArrow = new GamePanel.RoundedButton("<",15);
+            rightArrow = new GamePanel.RoundedButton(">",15);
+
+            leftArrow.setBounds(645, 75, 50, 50);
+            rightArrow.setBounds(920, 75, 50, 50);
+
+            // 버튼 클릭 시 이전/다음 단계로 이동
+            leftArrow.addActionListener(e -> showPreviousStep());
+            rightArrow.addActionListener(e -> showNextStep());
+
+            leftArrow.setBackground(new Color(255, 182, 193)); // 밝은 회색 배경
+            leftArrow.setForeground(Color.BLACK); // 검은 글자
+            rightArrow.setBackground(new Color(255, 182, 193)); // 밝은 회색 배경
+            rightArrow.setForeground(Color.BLACK); // 검은 글자
+
+            leftArrow.setVisible(false);
+            rightArrow.setVisible(false);
+
+            background.add(leftArrow);
+            background.add(rightArrow);
 
             frame.add(mainPanel);
             frame.setVisible(true);
@@ -82,21 +108,45 @@ public class GomokuClient {
         }
     }
 
+    private static class TurnRecord {
+        int row;
+        int col;
+        char playerSymbol;
+        String playerRole;  // 플레이어 구분을 위한 필드 추가
+
+        public TurnRecord(int row, int col, char playerSymbol, String playerRole) {
+            this.row = row;
+            this.col = col;
+            this.playerSymbol = playerSymbol;
+            this.playerRole = playerRole;
+        }
+    }
+
     private void handleMove(int row, int col) {
+        if (currentReplayStep != -1) {
+            JOptionPane.showMessageDialog(frame, "기록 재생 중에는 돌을 놓을 수 없습니다!", "경고", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
         if (!isPlayerTurn) {
             JOptionPane.showMessageDialog(frame, "상대방의 턴입니다!", "오류", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         try {
-            output.writeUTF(row + "," + col); // 서버로 좌표 전송
-            resetTimer(); // 타이머 리셋
-            isPlayerTurn = false; // 턴 종료
+            char currentSymbol = playerRole.equals("Player 1 (X).") ? 'X' : 'O';
+            board[row][col] = currentSymbol;
+
+            // 현재 수를 기록에 추가 (플레이어 구분 정보도 포함)
+            gameHistory.add(new TurnRecord(row, col, currentSymbol, playerRole));
+
+            output.writeUTF(row + "," + col);
+            resetTimer();
+            isPlayerTurn = false;
+            gamePanel.repaint();
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
-
 
     private void startTimer() {
         timeLeft = 20;
@@ -189,7 +239,7 @@ public class GomokuClient {
                     SwingUtilities.invokeLater(() -> {
                         JOptionPane.showMessageDialog(frame, "금지된 수입니다! 다시 시도하세요.", "경고", JOptionPane.WARNING_MESSAGE);
                     });
-                    isPlayerTurn = true; // 차례 유지
+                    isPlayerTurn = true;
                 } else if (message.equals("UNDO_RESPONSE_REQUIRED")) {
                     int response = JOptionPane.showConfirmDialog(
                             frame,
@@ -200,7 +250,7 @@ public class GomokuClient {
                     try {
                         if (response == JOptionPane.YES_OPTION) {
                             output.writeUTF("UNDO_ACCEPTED");
-                            resetTimer(); // 타이머 리셋
+                            resetTimer();
                         } else {
                             output.writeUTF("UNDO_REJECTED");
                         }
@@ -226,7 +276,6 @@ public class GomokuClient {
                     resetTimer();
                     startTimer();
 
-                    // 실제로 턴이 변경될 때만 메시지 표시
                     if (!previousTurn) {
                         SwingUtilities.invokeLater(() ->
                                 JOptionPane.showMessageDialog(frame, "[" + playerRole + "] Your turn!", "Game Alert", JOptionPane.INFORMATION_MESSAGE));
@@ -234,7 +283,24 @@ public class GomokuClient {
                 } else if (message.equals("Opponent turn.")) {
                     isPlayerTurn = false;
                     resetTimer();
-                } else {
+                } else if (message.equals("You win!") || message.equals("You lose!") || message.equals("Draw!")) {
+                    isGameEnded = true;
+                    String finalMessage = message;
+
+                    // 게임 기록 디버깅 출력
+                    System.out.println("=== 게임 기록 출력 ===");
+                    for (TurnRecord record : gameHistory) {
+                        System.out.println("Row = " + record.row + ", Col = " + record.col +
+                                ", Symbol = " + record.playerSymbol + ", Role = " + record.playerRole);
+                    }
+                    System.out.println("===================");
+
+                    SwingUtilities.invokeLater(() -> {
+                        JOptionPane.showMessageDialog(frame, finalMessage, "Game Status", JOptionPane.INFORMATION_MESSAGE);
+                        enableReplayMode();
+                    });
+                }
+                else {
                     SwingUtilities.invokeLater(() ->
                             JOptionPane.showMessageDialog(frame, message, "Game Status", JOptionPane.INFORMATION_MESSAGE));
                 }
@@ -243,8 +309,6 @@ public class GomokuClient {
             e.printStackTrace();
         }
     }
-
-
 
 
     private void updateBoard(String boardState) {
@@ -315,6 +379,54 @@ public class GomokuClient {
         return infoPanel;
     }
 
+    private void enableReplayMode() {
+        if (!isGameEnded) return;
+
+        currentReplayStep = gameHistory.size() - 1;
+
+        SwingUtilities.invokeLater(() -> {
+            JOptionPane.showMessageDialog(frame,
+                    "게임 기록 재생이 가능합니다.\n" +
+                            "← : 이전 수 보기\n" +
+                            "→ : 다음 수 보기\n\n" +
+                            "흑돌(X)과 백돌(O)이 번갈아가며 표시됩니다.",
+                    "기록 재생 안내",
+                    JOptionPane.INFORMATION_MESSAGE);
+
+            leftArrow.setVisible(true);
+            rightArrow.setVisible(true);
+        });
+    }
+
+
+    private void showPreviousStep() {
+        if (currentReplayStep >= 0) { // 첫 번째 수 이하로 내려가지 않도록 조건 설정
+            // 현재 단계의 돌 제거
+            TurnRecord record = gameHistory.get(currentReplayStep);
+            board[record.row][record.col] = '.'; // 현재 기록의 돌만 제거
+            gamePanel.repaint(); // 보드 갱신
+
+            // 이전 단계로 이동
+            currentReplayStep--;
+        } else {
+            JOptionPane.showMessageDialog(frame, "첫 번째 수입니다.", "알림", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+
+    private void showNextStep() {
+        if (currentReplayStep < gameHistory.size() - 1) { // 마지막 단계 이상으로 넘어가지 않도록 조건 설정
+            // 다음 단계로 이동
+            currentReplayStep++;
+
+            // 기록에서 돌 추가
+            TurnRecord record = gameHistory.get(currentReplayStep);
+            board[record.row][record.col] = record.playerSymbol; // 해당 위치에 돌 추가
+            gamePanel.repaint(); // 보드 갱신
+        } else {
+            JOptionPane.showMessageDialog(frame, "마지막 수입니다.", "알림", JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
 
     private JPanel createChatPanel() {
         JPanel chatPanel = new JPanel(null);
@@ -375,8 +487,41 @@ public class GomokuClient {
         });
         chatPanel.add(undoButton);
 
+        // 나가기 버튼 추가
+        GamePanel.RoundedButton exitButton = new GamePanel.RoundedButton("나가기", 15);
+        exitButton.setBounds(10, 300, 280, 30);
+        exitButton.setBackground(new Color(255, 100, 100));
+        exitButton.setFont(new Font("맑은 고딕", Font.BOLD, 14));
+        exitButton.setForeground(Color.WHITE);
+
+        // 나가기 버튼의 클릭 동작
+        exitButton.addActionListener(e -> {
+            int confirm = JOptionPane.showConfirmDialog(
+                    frame,
+                    "정말 나가시겠습니까?",
+                    "나가기 확인",
+                    JOptionPane.YES_NO_OPTION
+            );
+            if (confirm == JOptionPane.YES_OPTION) {
+                frame.dispose();
+                System.exit(0);
+            }
+        });
+
+        // 초기에는 보이지 않도록 설정
+//        exitButton.setVisible(false);
+        chatPanel.add(exitButton);
+
+        // 게임 종료 시 나가기 버튼 보이기
+        SwingUtilities.invokeLater(() -> {
+            if (isGameEnded) {
+                exitButton.setVisible(true);
+            }
+        });
+
         return chatPanel;
     }
+
 
 
     private void sendMessage() {
@@ -594,31 +739,71 @@ public class GomokuClient {
             super.paintComponent(g);
             Graphics2D g2d = (Graphics2D) g;
 
-            g2d.setColor(new Color(245, 222, 179));
+            // 배경 그리기
+            g2d.setColor(new Color(245, 222, 179)); // 바둑판 배경 색상
             g2d.fillRect(0, 0, getWidth(), getHeight());
 
+            // 바둑판 그리기
             g.setColor(Color.BLACK);
             g2d.setStroke(new BasicStroke(1));
             for (int i = 0; i < BOARD_SIZE; i++) {
                 int x = PADDING + i * CELL_SIZE;
                 int y = PADDING + i * CELL_SIZE;
-                g.drawLine(PADDING, y, PADDING + (BOARD_SIZE - 1) * CELL_SIZE, y);
-                g.drawLine(x, PADDING, x, PADDING + (BOARD_SIZE - 1) * CELL_SIZE);
+                g.drawLine(PADDING, y, PADDING + (BOARD_SIZE - 1) * CELL_SIZE, y); // 가로선
+                g.drawLine(x, PADDING, x, PADDING + (BOARD_SIZE - 1) * CELL_SIZE); // 세로선
             }
 
+            // 외곽선 그리기
+            g.setColor(Color.BLACK);
+            g2d.setStroke(new BasicStroke(2)); // 두꺼운 선
+            int boardSizeWithPadding = BOARD_SIZE * CELL_SIZE; // 여백 포함 크기
+            g2d.drawRect(PADDING, PADDING, boardSizeWithPadding - CELL_SIZE, boardSizeWithPadding - CELL_SIZE); // 여백을 위한 좌표 설정
+
+            // 교차점 강조 (별점 그리기)
+            g2d.setColor(Color.BLACK);
+            int dotSize = 6; // 점 크기
+            int[][] starPoints = { // 정확한 교차점 위치
+                    {3, 3}, {3, 15}, {15, 3}, {15, 15}, {9, 9}, {3, 9}, {9, 3}, {9, 15}, {15, 9}
+            };
+            for (int[] point : starPoints) {
+                int x = PADDING + point[0] * CELL_SIZE - dotSize / 2; // 별점의 중심 조정
+                int y = PADDING + point[1] * CELL_SIZE - dotSize / 2; // 별점의 중심 조정
+                g2d.fillOval(x, y, dotSize, dotSize);
+            }
+
+            // 돌 그리기 및 기록 추가
             int stoneSize = (int) (CELL_SIZE * 0.8);
             for (int i = 0; i < BOARD_SIZE; i++) {
                 for (int j = 0; j < BOARD_SIZE; j++) {
+                    final int row = i; // final 변수 선언
+                    final int col = j; // final 변수 선언
+
                     int x = PADDING + j * CELL_SIZE - stoneSize / 2;
                     int y = PADDING + i * CELL_SIZE - stoneSize / 2;
-                    if (board[i][j] == 'X') {
-                        g.drawImage(blackStone, x, y, stoneSize, stoneSize, this);
-                    } else if (board[i][j] == 'O') {
-                        g.drawImage(whiteStone, x, y, stoneSize, stoneSize, this);
+                    if (board[i][j] == 'X' || board[i][j] == 'O') {
+                        // 돌 그리기
+                        if (board[i][j] == 'X') {
+                            g.drawImage(blackStone, x, y, stoneSize, stoneSize, this);
+                        } else if (board[i][j] == 'O') {
+                            g.drawImage(whiteStone, x, y, stoneSize, stoneSize, this);
+                        }
+
+                        // 기록 추가
+                        boolean alreadyRecorded = gameHistory.stream()
+                                .anyMatch(record -> record.row == row && record.col == col);
+                        if (!alreadyRecorded) {
+                            String player = board[i][j] == 'X' ? "Player 1 (X)." : "Player 2 (O).";
+                            gameHistory.add(new TurnRecord(row, col, board[i][j], player));
+
+                            // 디버깅 출력
+                            System.out.println("기록 추가됨: Row = " + row + ", Col = " + col + ", Symbol = " + board[i][j] + ", Role = " + player);
+                        }
                     }
                 }
             }
         }
+
+
     }
 
     public static void main(String[] args) {

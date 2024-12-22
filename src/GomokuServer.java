@@ -14,8 +14,6 @@ public class GomokuServer {
 
     private static class GameState {
         char[][] boardState;
-        int lastRow = -1;
-        int lastCol = -1;
 
         public GameState(char[][] board) {
             boardState = new char[BOARD_SIZE][BOARD_SIZE];
