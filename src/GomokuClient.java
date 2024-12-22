@@ -4,6 +4,9 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.*;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 
 public class GomokuClient {
     private static final int BOARD_SIZE = 19;
@@ -89,10 +92,71 @@ public class GomokuClient {
     private void handleMove(int row, int col) {
         try {
             output.writeUTF(row + "," + col); // 서버로 좌표 전송
+            resetTimer(); // 타이머 리셋
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
+
+    private void startTimer() {
+        resetTimer();
+        timer = new Timer(1000, e -> {
+            timeLeft--;
+            timerLabel.setText(String.valueOf(timeLeft));
+            if (timeLeft == 0) {
+                makeRandomMove(); // 타이머 종료 시 임의의 수를 둠
+            }
+        });
+        timer.start();
+    }
+
+    private void resetTimer() {
+        if (timer != null) {
+            timer.stop();
+        }
+        timeLeft = 20;
+        timerLabel.setText(String.valueOf(timeLeft));
+    }
+
+
+    private void makeRandomMove() {
+        // 빈 칸의 좌표를 수집
+        List<int[]> emptyCells = new ArrayList<>();
+        for (int i = 0; i < BOARD_SIZE; i++) {
+            for (int j = 0; j < BOARD_SIZE; j++) {
+                if (board[i][j] == '.') { // 빈 칸이면 좌표를 저장
+                    emptyCells.add(new int[]{i, j});
+                }
+            }
+        }
+
+        // 빈 칸이 없으면 종료
+        if (emptyCells.isEmpty()) {
+            JOptionPane.showMessageDialog(frame, "더 이상 놓을 수 있는 위치가 없습니다!");
+            return;
+        }
+
+        // 랜덤하게 빈 칸 중 하나 선택
+        Random random = new Random();
+        int[] randomCell = emptyCells.get(random.nextInt(emptyCells.size()));
+
+        // 선택한 좌표에 돌을 둠
+        int row = randomCell[0];
+        int col = randomCell[1];
+        board[row][col] = (playerRole.equals("Player 1") ? 'X' : 'O'); // 자신의 돌 놓기
+        gamePanel.repaint(); // 화면 갱신
+
+        try {
+            output.writeUTF(row + "," + col); // 서버에 위치 전송
+            isPlayerTurn = false; // 차례 넘기기
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+
+        resetTimer(); // 타이머 초기화
+    }
+
+
 
     private void listenToServer() {
         try {
@@ -108,6 +172,9 @@ public class GomokuClient {
                 } else if (message.equals("Your turn.")) {
                     isPlayerTurn = true; // 본인의 턴으로 설정
                     SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, "[" + playerRole + "] Your turn!", "Game Alert", JOptionPane.INFORMATION_MESSAGE));
+                    startTimer();
+                } else if (message.equals("Opponent turn.")) {
+                    resetTimer();
                 } else if (message.startsWith("Invalid move")) {
                     SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, message, "Invalid Move", JOptionPane.WARNING_MESSAGE));
                 } else {
