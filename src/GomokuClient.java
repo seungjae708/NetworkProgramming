@@ -10,46 +10,42 @@ import java.util.Random;
 
 public class GomokuClient {
     private static final int BOARD_SIZE = 19;
-    private static final int CELL_SIZE = 30; // 각 셀의 크기
-    private char[][] board = new char[BOARD_SIZE][BOARD_SIZE]; // 게임 보드 상태
-    private String playerRole = ""; // 플레이어 역할 (Player 1 또는 Player 2)
+    private static final int CELL_SIZE = 30;
+    private char[][] board = new char[BOARD_SIZE][BOARD_SIZE];
+    private String playerRole = "";
     private DataInputStream input;
     private DataOutputStream output;
-    private GamePanel gamePanel; // 게임 패널 참조
-    private JFrame frame; // 메인 프레임
-    private boolean isPlayerTurn = false; // 클라이언트 턴 여부 추적
-    private JTextArea chatArea; // 채팅 메시지 표시
-    private JTextField messageField; // 채팅 메시지 입력
-    private JLabel timerLabel; // 타이머 표시
-    private Timer timer; // Swing 타이머
-    private int timeLeft = 20; // 20초 타이머
+    private GamePanel gamePanel;
+    private JFrame frame;
+    private boolean isPlayerTurn = false;
+    private JTextArea chatArea;
+    private JTextField messageField;
+    private JLabel timerLabel;
+    private Timer timer;
+    private int timeLeft = 20;
+    private boolean undoRequested = false;
 
     public GomokuClient(String serverAddress, int port) {
         try {
-            // 서버와 연결
             Socket socket = new Socket(serverAddress, port);
             input = new DataInputStream(socket.getInputStream());
             output = new DataOutputStream(socket.getOutputStream());
 
-            // 역할 정보 수신
-            playerRole = input.readUTF(); // 서버에서 역할 정보 수신 (Player 1 또는 Player 2)
+            playerRole = input.readUTF();
 
-            // GUI 생성
-            frame = new JFrame("Gomoku Client - " + playerRole); // 프레임 제목에 역할 표시
+            frame = new JFrame("Gomoku Client - " + playerRole);
             frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             frame.setSize(1000, 700);
             frame.setLocationRelativeTo(null);
 
-            // 보드 초기화
             for (int i = 0; i < BOARD_SIZE; i++) {
                 for (int j = 0; j < BOARD_SIZE; j++) {
                     board[i][j] = '.';
                 }
             }
 
-            gamePanel = new GamePanel(); // 커스터마이즈된 패널
+            gamePanel = new GamePanel();
 
-            // 배경 패널 설정
             JPanel mainPanel = new JPanel(null);
             JLabel background = new JLabel();
             try {
@@ -62,26 +58,21 @@ public class GomokuClient {
             background.setBounds(0, 0, 1000, 700);
             mainPanel.add(background);
 
-            // 게임판 배치
             gamePanel.setBounds(50, 50, 570, 570);
             background.add(gamePanel);
 
-            // 오른쪽 정보 패널 배치
             JPanel infoPanel = createInfoPanel();
             infoPanel.setBounds(650, 50, 300, 200);
             background.add(infoPanel);
 
-            // 채팅 및 무르기 패널 추가
             JPanel chatPanel = createChatPanel();
             chatPanel.setBounds(650, 300, 300, 350);
             background.add(chatPanel);
 
-            // 프레임 구성
             frame.add(mainPanel);
             frame.setVisible(true);
             frame.setResizable(false);
 
-            // 서버로부터 데이터를 수신하는 스레드
             new Thread(this::listenToServer).start();
 
         } catch (IOException e) {
@@ -90,21 +81,34 @@ public class GomokuClient {
     }
 
     private void handleMove(int row, int col) {
+        if (!isPlayerTurn) {
+            JOptionPane.showMessageDialog(frame, "상대방의 턴입니다!", "오류", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         try {
             output.writeUTF(row + "," + col); // 서버로 좌표 전송
             resetTimer(); // 타이머 리셋
+            isPlayerTurn = false; // 턴 종료
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
+
     private void startTimer() {
-        resetTimer();
+        timeLeft = 20;
+        timerLabel.setText(String.valueOf(timeLeft));
+        if (timer != null) {
+            timer.stop();
+        }
         timer = new Timer(1000, e -> {
             timeLeft--;
             timerLabel.setText(String.valueOf(timeLeft));
             if (timeLeft == 0) {
-                makeRandomMove(); // 타이머 종료 시 임의의 수를 둠
+                if (isPlayerTurn) { // 자신의 턴일 때만 랜덤 수 두기
+                    makeRandomMove();
+                }
             }
         });
         timer.start();
@@ -161,30 +165,71 @@ public class GomokuClient {
     private void listenToServer() {
         try {
             while (true) {
-                String message = input.readUTF(); // 서버로부터 메시지 수신
+                String message = input.readUTF();
 
                 if (message.startsWith("Current board:")) {
-                    updateBoard(message); // 보드 상태 업데이트
-                    gamePanel.repaint(); // 화면 갱신
-                } else if (message.startsWith("Forbidden move")) {
-                    SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, message, "Invalid Move", JOptionPane.WARNING_MESSAGE));
-                    isPlayerTurn = true; // 금지된 이동 후 턴 복구
+                    updateBoard(message);
+                    gamePanel.repaint();
+                } else if (message.equals("Forbidden move! Try again.")) {
+                    SwingUtilities.invokeLater(() -> {
+                        JOptionPane.showMessageDialog(frame, "금지된 수입니다! 다시 시도하세요.", "경고", JOptionPane.WARNING_MESSAGE);
+                    });
+                    isPlayerTurn = true; // 차례 유지
+                } else if (message.equals("UNDO_RESPONSE_REQUIRED")) {
+                    int response = JOptionPane.showConfirmDialog(
+                            frame,
+                            "상대방이 무르기를 요청했습니다. 허락하시겠습니까?",
+                            "무르기 요청",
+                            JOptionPane.YES_NO_OPTION
+                    );
+                    try {
+                        if (response == JOptionPane.YES_OPTION) {
+                            output.writeUTF("UNDO_ACCEPTED");
+                            resetTimer(); // 타이머 리셋
+                        } else {
+                            output.writeUTF("UNDO_REJECTED");
+                        }
+                    } catch (IOException ex) {
+                        ex.printStackTrace();
+                    }
+                } else if (message.equals("UNDO_SUCCESSFUL")) {
+                    SwingUtilities.invokeLater(() -> {
+                        JOptionPane.showMessageDialog(frame, "무르기가 수락되었습니다.");
+                        undoRequested = false;
+
+                        // 무르기가 성공하면 자신의 턴 여부를 서버에 맞춰 초기화
+                        isPlayerTurn = true; // 무르기 요청자는 다시 자신의 턴이 됨
+                        resetTimer(); // 타이머 리셋
+                        startTimer(); // 타이머 재시작
+                    });
+                } else if (message.equals("UNDO_REJECTED")) {
+                    SwingUtilities.invokeLater(() -> {
+                        JOptionPane.showMessageDialog(frame, "상대방이 무르기를 거절했습니다.");
+                        undoRequested = false;
+                    });
+                } else if (message.startsWith("CHAT:")) {
+                    SwingUtilities.invokeLater(() -> {
+                        chatArea.append(message.substring(5) + "\n");
+                    });
                 } else if (message.equals("Your turn.")) {
-                    isPlayerTurn = true; // 본인의 턴으로 설정
-                    SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, "[" + playerRole + "] Your turn!", "Game Alert", JOptionPane.INFORMATION_MESSAGE));
-                    startTimer();
-                } else if (message.equals("Opponent turn.")) {
+                    isPlayerTurn = true;
                     resetTimer();
-                } else if (message.startsWith("Invalid move")) {
-                    SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, message, "Invalid Move", JOptionPane.WARNING_MESSAGE));
+                    startTimer();
+                    SwingUtilities.invokeLater(() ->
+                            JOptionPane.showMessageDialog(frame, "[" + playerRole + "] Your turn!", "Game Alert", JOptionPane.INFORMATION_MESSAGE));
+                } else if (message.equals("Opponent turn.")) {
+                    isPlayerTurn = false; // 상대 턴으로 설정
+                    resetTimer();
                 } else {
-                    SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(frame, message, "Game Status", JOptionPane.INFORMATION_MESSAGE));
+                    SwingUtilities.invokeLater(() ->
+                            JOptionPane.showMessageDialog(frame, message, "Game Status", JOptionPane.INFORMATION_MESSAGE));
                 }
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
+
 
     private void updateBoard(String boardState) {
         String[] rows = boardState.split("\n");
@@ -218,6 +263,7 @@ public class GomokuClient {
         roleLabel.setForeground(new Color(255, 105, 180));
         roleLabel.setBounds(20, 100, 260, 40);
         infoPanel.add(roleLabel);
+
 
         return infoPanel;
     }
@@ -253,6 +299,28 @@ public class GomokuClient {
         sendButton.addActionListener(e -> sendMessage());
         chatPanel.add(sendButton);
 
+        JButton undoButton = new JButton("무르기 요청");
+        undoButton.setBounds(10, 260, 280, 30);
+        undoButton.setBackground(new Color(255, 192, 203));
+        undoButton.setFont(new Font("맑은 고딕", Font.BOLD, 14));
+        undoButton.addActionListener(e -> {
+            if (!isPlayerTurn) {
+                JOptionPane.showMessageDialog(frame, "자신의 턴에만 무르기를 요청할 수 있습니다.");
+                return;
+            }
+            if (!undoRequested) {
+                try {
+                    output.writeUTF("UNDO_REQUEST");
+                    undoRequested = true;
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                }
+            } else {
+                JOptionPane.showMessageDialog(frame, "이미 무르기를 요청했습니다.");
+            }
+        });
+        chatPanel.add(undoButton);
+
         return chatPanel;
     }
 
@@ -287,24 +355,44 @@ public class GomokuClient {
             addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseClicked(MouseEvent e) {
-                    int x = e.getX();
-                    int y = e.getY();
+                    // 클릭 이벤트를 SwingUtilities.invokeLater로 래핑
+                    SwingUtilities.invokeLater(() -> {
+                        // 턴 검사를 가장 먼저 수행
+                        if (!isPlayerTurn) {
+                            JOptionPane.showMessageDialog(frame,
+                                    "상대방의 턴입니다!",
+                                    "차례 오류",
+                                    JOptionPane.WARNING_MESSAGE);
+                            return;
+                        }
 
-                    int col = (x - PADDING + CELL_SIZE / 2) / CELL_SIZE;
-                    int row = (y - PADDING + CELL_SIZE / 2) / CELL_SIZE;
+                        int x = e.getX();
+                        int y = e.getY();
 
-                    if (!isPlayerTurn) {
-                        JOptionPane.showMessageDialog(frame, "It's not your turn!", "Game Alert", JOptionPane.WARNING_MESSAGE);
-                        return;
-                    }
+                        int col = (x - PADDING + CELL_SIZE / 2) / CELL_SIZE;
+                        int row = (y - PADDING + CELL_SIZE / 2) / CELL_SIZE;
 
-                    if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE || board[row][col] != '.') {
-                        JOptionPane.showMessageDialog(frame, "Invalid move!", "Game Alert", JOptionPane.WARNING_MESSAGE);
-                        return;
-                    }
+                        // 유효한 위치인지 검사
+                        if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) {
+                            JOptionPane.showMessageDialog(frame,
+                                    "보드 범위를 벗어났습니다!",
+                                    "위치 오류",
+                                    JOptionPane.WARNING_MESSAGE);
+                            return;
+                        }
 
-                    handleMove(row, col);
-                    isPlayerTurn = false; // 턴 종료
+                        // 이미 돌이 놓여있는지 검사
+                        if (board[row][col] != '.') {
+                            JOptionPane.showMessageDialog(frame,
+                                    "이미 돌이 놓여있는 위치입니다!",
+                                    "위치 오류",
+                                    JOptionPane.WARNING_MESSAGE);
+                            return;
+                        }
+
+                        // 모든 검증을 통과한 경우에만 handleMove 호출
+                        handleMove(row, col);
+                    });
                 }
             });
         }

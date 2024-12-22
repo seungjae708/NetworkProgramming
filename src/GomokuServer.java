@@ -10,6 +10,20 @@ public class GomokuServer {
     private static DataInputStream input1 = null, input2 = null;
     private static DataOutputStream output1 = null, output2 = null;
     private static boolean isPlayer1Turn = true;
+    private static GameState lastState = null;
+
+    private static class GameState {
+        char[][] boardState;
+        int lastRow = -1;
+        int lastCol = -1;
+
+        public GameState(char[][] board) {
+            boardState = new char[BOARD_SIZE][BOARD_SIZE];
+            for (int i = 0; i < BOARD_SIZE; i++) {
+                boardState[i] = board[i].clone();
+            }
+        }
+    }
 
     public static void main(String[] args) throws IOException {
         // 보드 초기화
@@ -49,6 +63,7 @@ public class GomokuServer {
             while (true) {
                 DataInputStream currentInput = isPlayer1Turn ? input1 : input2;
                 DataOutputStream currentOutput = isPlayer1Turn ? output1 : output2;
+                DataInputStream otherInput = isPlayer1Turn ? input2 : input1;
                 DataOutputStream otherOutput = isPlayer1Turn ? output2 : output1;
                 char currentSymbol = isPlayer1Turn ? 'X' : 'O';
 
@@ -63,6 +78,39 @@ public class GomokuServer {
                     System.out.println("A player disconnected.");
                     resetPlayers();
                     break;
+                }
+
+                // 무르기 요청 처리
+                if (move.equals("UNDO_REQUEST")) {
+                    otherOutput.writeUTF("UNDO_RESPONSE_REQUIRED");
+                    String response = otherInput.readUTF();
+
+                    if (response.equals("UNDO_ACCEPTED")) {
+                        if (lastState != null) {
+                            // 이전 상태로 복원
+                            for (int i = 0; i < BOARD_SIZE; i++) {
+                                board[i] = lastState.boardState[i].clone();
+                            }
+                            currentOutput.writeUTF("UNDO_SUCCESSFUL");
+                            otherOutput.writeUTF("UNDO_SUCCESSFUL");
+                            broadcastBoard();
+
+                            // 턴을 요청한 플레이어로 되돌림
+                            isPlayer1Turn = !isPlayer1Turn;
+                        } else {
+                            currentOutput.writeUTF("No previous state available");
+                        }
+                    } else {
+                        currentOutput.writeUTF("UNDO_REJECTED");
+                    }
+                    continue;
+                }
+
+                // 채팅 메시지 처리
+                if (move.startsWith("CHAT:")) {
+                    output1.writeUTF(move);
+                    output2.writeUTF(move);
+                    continue;
                 }
 
                 String[] parts = move.split(",");
@@ -80,17 +128,17 @@ public class GomokuServer {
                     continue;
                 }
 
+                // 현재 상태 저장
+                lastState = new GameState(board);
+
                 board[row][col] = currentSymbol;
 
-                // 삼삼/사사/장목 금지 규칙 검사
                 if (isForbiddenMove(row, col, currentSymbol)) {
                     currentOutput.writeUTF("Forbidden move! Try again.");
-                    board[row][col] = '.'; // Undo the move
-                    forbiddenMoveOccurred = true; // 금지된 수 발생 플래그 설정
-                    continue;
+                    board[row][col] = '.'; // 무효화
+                    continue; // 현재 플레이어가 다시 수를 둘 수 있도록 처리
                 }
 
-                forbiddenMoveOccurred = false; // 금지된 수가 없으면 플래그 초기화
 
                 broadcastBoard();
 
