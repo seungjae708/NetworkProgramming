@@ -39,7 +39,7 @@ public class GomokuServer {
                 System.out.println("Player 1 connected.");
                 input1 = new DataInputStream(player1.getInputStream());
                 output1 = new DataOutputStream(player1.getOutputStream());
-                output1.writeUTF("You are Player 1 (X).");
+                output1.writeUTF("Player 1 (X).");
             }
 
             if (player2 == null) {
@@ -48,19 +48,66 @@ public class GomokuServer {
                 System.out.println("Player 2 connected.");
                 input2 = new DataInputStream(player2.getInputStream());
                 output2 = new DataOutputStream(player2.getOutputStream());
-                output2.writeUTF("You are Player 2 (O).");
+                output2.writeUTF("Player 2 (O).");
             }
 
             if (player1 != null && player2 != null) {
+                manageChat();
                 playGame();
             }
         }
     }
 
+    private static void manageChat() {
+        new Thread(() -> {
+            try {
+                while (true) {
+                    // Player 1의 메시지 처리
+                    if (input1 != null && input1.available() > 0) {
+                        String chatMessage = input1.readUTF();
+                        if (chatMessage.startsWith("CHAT:")) {
+                            // Player 1 자신의 채팅창에만 추가 (Player 1에게는 재전송 안 함)
+                            if (output1 != null) {
+                                output1.writeUTF(chatMessage);
+                            }
+                            // Player 2에게 전달
+                            if (output2 != null) {
+                                output2.writeUTF(chatMessage);
+                            }
+                        }
+                    }
+
+                    // Player 2의 메시지 처리
+                    if (input2 != null && input2.available() > 0) {
+                        String chatMessage = input2.readUTF();
+                        if (chatMessage.startsWith("CHAT:")) {
+                            // Player 2 자신의 채팅창에만 추가 (Player 2에게는 재전송 안 함)
+                            if (output2 != null) {
+                                output2.writeUTF(chatMessage);
+                            }
+                            // Player 1에게 전달
+                            if (output1 != null) {
+                                output1.writeUTF(chatMessage);
+                            }
+                        }
+                    }
+
+                    // 대기 시간 설정 (CPU 부하 방지)
+                    Thread.sleep(50);
+                }
+            } catch (IOException | InterruptedException e) {
+                System.out.println("Error in chat manager: " + e.getMessage());
+            }
+        }).start();
+    }
+
+
     private static void playGame() throws IOException {
         try {
             boolean forbiddenMoveOccurred = false;
             while (true) {
+
+                // 게임 진행 로직
                 DataInputStream currentInput = isPlayer1Turn ? input1 : input2;
                 DataOutputStream currentOutput = isPlayer1Turn ? output1 : output2;
                 DataInputStream otherInput = isPlayer1Turn ? input2 : input1;

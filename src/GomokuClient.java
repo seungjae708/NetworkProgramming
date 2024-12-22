@@ -34,7 +34,7 @@ public class GomokuClient {
             playerRole = input.readUTF();
 
             frame = new JFrame("Gomoku Client - " + playerRole);
-            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+//            frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             frame.setSize(1000, 700);
             frame.setLocationRelativeTo(null);
 
@@ -160,12 +160,22 @@ public class GomokuClient {
         resetTimer(); // 타이머 초기화
     }
 
-
-
     private void listenToServer() {
         try {
             while (true) {
                 String message = input.readUTF();
+
+                // 채팅 메시지는 항상 즉시 표시
+                if (message.startsWith("CHAT:")) {
+                    // 자신이 보낸 메시지는 다시 출력하지 않음
+                    String player = message.split(":")[1].trim(); // 메시지에서 Player 정보를 추출
+                    if (!playerRole.equals(player)) {
+                        SwingUtilities.invokeLater(() -> {
+                            chatArea.append(message.substring(5) + "\n");
+                        });
+                    }
+                    continue;
+                }
 
                 if (message.startsWith("Current board:")) {
                     updateBoard(message);
@@ -196,29 +206,28 @@ public class GomokuClient {
                     SwingUtilities.invokeLater(() -> {
                         JOptionPane.showMessageDialog(frame, "무르기가 수락되었습니다.");
                         undoRequested = false;
-
-                        // 무르기가 성공하면 자신의 턴 여부를 서버에 맞춰 초기화
-                        isPlayerTurn = true; // 무르기 요청자는 다시 자신의 턴이 됨
-                        resetTimer(); // 타이머 리셋
-                        startTimer(); // 타이머 재시작
+                        isPlayerTurn = true;
+                        resetTimer();
+                        startTimer();
                     });
                 } else if (message.equals("UNDO_REJECTED")) {
                     SwingUtilities.invokeLater(() -> {
                         JOptionPane.showMessageDialog(frame, "상대방이 무르기를 거절했습니다.");
                         undoRequested = false;
                     });
-                } else if (message.startsWith("CHAT:")) {
-                    SwingUtilities.invokeLater(() -> {
-                        chatArea.append(message.substring(5) + "\n");
-                    });
                 } else if (message.equals("Your turn.")) {
+                    boolean previousTurn = isPlayerTurn;
                     isPlayerTurn = true;
                     resetTimer();
                     startTimer();
-                    SwingUtilities.invokeLater(() ->
-                            JOptionPane.showMessageDialog(frame, "[" + playerRole + "] Your turn!", "Game Alert", JOptionPane.INFORMATION_MESSAGE));
+
+                    // 실제로 턴이 변경될 때만 메시지 표시
+                    if (!previousTurn) {
+                        SwingUtilities.invokeLater(() ->
+                                JOptionPane.showMessageDialog(frame, "[" + playerRole + "] Your turn!", "Game Alert", JOptionPane.INFORMATION_MESSAGE));
+                    }
                 } else if (message.equals("Opponent turn.")) {
-                    isPlayerTurn = false; // 상대 턴으로 설정
+                    isPlayerTurn = false;
                     resetTimer();
                 } else {
                     SwingUtilities.invokeLater(() ->
@@ -229,6 +238,8 @@ public class GomokuClient {
             e.printStackTrace();
         }
     }
+
+
 
 
     private void updateBoard(String boardState) {
@@ -328,7 +339,13 @@ public class GomokuClient {
         String message = messageField.getText();
         if (!message.isEmpty()) {
             try {
+                // 메시지를 서버로 전송
                 output.writeUTF("CHAT:" + playerRole + ": " + message);
+
+                // 메시지를 자신의 채팅창에 추가
+                chatArea.append(playerRole + ": " + message + "\n");
+
+                // 메시지 입력창 초기화
                 messageField.setText("");
             } catch (Exception ex) {
                 ex.printStackTrace();
